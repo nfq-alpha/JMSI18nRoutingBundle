@@ -21,6 +21,8 @@ class DefaultLocaleResolver implements LocaleResolverInterface
 {
     private $cookieName;
     private $hostMap;
+    private $domainMap = array();
+    private $localeMapping = array();
 
     public function __construct($cookieName, array $hostMap = array())
     {
@@ -29,11 +31,49 @@ class DefaultLocaleResolver implements LocaleResolverInterface
     }
 
     /**
+     * @return array
+     */
+    public function getDomainMap()
+    {
+        return $this->domainMap;
+    }
+
+    /**
+     * @param array $domainMap
+     */
+    public function setDomainMap($domainMap)
+    {
+        $this->domainMap = $domainMap;
+    }
+
+    /**
+     * @return array
+     */
+    public function getLocaleMapping()
+    {
+        return $this->localeMapping;
+    }
+
+    /**
+     * @param array $localeMapping
+     */
+    public function setLocaleMapping($localeMapping)
+    {
+        $this->localeMapping = $localeMapping;
+    }
+
+    /**
      * {@inheritDoc}
      */
     public function resolveLocale(Request $request, array $availableLocales)
     {
-        if ($this->hostMap && isset($this->hostMap[$host = $request->getHost()])) {
+        $host = $request->getHost();
+
+        if ($this->domainMap && isset($this->domainMap[$host]['default_locale'])) {
+            return $this->domainMap[$host]['default_locale'];
+        }
+
+        if ($this->hostMap && isset($this->hostMap[$host])) {
             return $this->hostMap[$host];
         }
 

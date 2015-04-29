@@ -17,6 +17,7 @@ class DefaultPatternGenerationStrategy implements PatternGenerationStrategyInter
     const STRATEGY_PREFIX = 'prefix';
     const STRATEGY_PREFIX_EXCEPT_DEFAULT = 'prefix_except_default';
     const STRATEGY_CUSTOM = 'custom';
+    const STRATEGY_DOMAINS_PREFIX_EXCEPT_DEFAULT = 'domains_prefix_except_default';
 
     private $strategy;
     private $translator;
@@ -24,9 +25,17 @@ class DefaultPatternGenerationStrategy implements PatternGenerationStrategyInter
     private $locales;
     private $cacheDir;
     private $defaultLocale;
+    private $localeMapping;
+    private $domainMap;
 
-    public function __construct($strategy, TranslatorInterface $translator, array $locales, $cacheDir, $translationDomain = 'routes', $defaultLocale = 'en')
-    {
+    public function __construct(
+        $strategy,
+        TranslatorInterface $translator,
+        array $locales,
+        $cacheDir,
+        $translationDomain = 'routes',
+        $defaultLocale = 'en'
+    ) {
         $this->strategy = $strategy;
         $this->translator = $translator;
         $this->translationDomain = $translationDomain;
@@ -40,23 +49,62 @@ class DefaultPatternGenerationStrategy implements PatternGenerationStrategyInter
      */
     public function generateI18nPatterns($routeName, Route $route)
     {
+        if (self::STRATEGY_DOMAINS_PREFIX_EXCEPT_DEFAULT === $this->strategy) {
+            $domainPatterns = array();
+
+            foreach ($this->getDomainMap() as $domain => $domainParams) {
+                $locales = isset($domainParams['locales'])
+                    ? $domainParams['locales']
+                    : $route->getOption('i18n_locales')
+                        ?: $this->locales;
+
+                foreach ($locales as $locale ) {
+                    if ($routeName === $i18nPattern = $this->translator->trans($routeName, array(), $this->translationDomain,
+                            $locale)
+                    ) {
+                        $i18nPattern = $route->getPattern();
+                    }
+
+                    $domainI18nPattern = $i18nPattern;
+                    if ($locale !== $domainParams['default_locale']) {
+                        if (array_key_exists($locale, $this->localeMapping)) {
+                            $domainI18nPattern = '/' . $this->localeMapping[$locale] . $domainI18nPattern;
+                        }
+                    }
+
+                    if (null !== $route->getOption('i18n_prefix')) {
+                        $domainI18nPattern = $route->getOption('i18n_prefix') . $domainI18nPattern;
+                    }
+
+                    $domainPatterns[$domain][$domainI18nPattern][] = $locale;
+                }
+            }
+
+            return $domainPatterns;
+        }
+
         $patterns = array();
+
         foreach ($route->getOption('i18n_locales') ?: $this->locales as $locale) {
             // if no translation exists, we use the current pattern
-            if ($routeName === $i18nPattern = $this->translator->trans($routeName, array(), $this->translationDomain, $locale)) {
+            if ($routeName === $i18nPattern = $this->translator->trans($routeName, array(), $this->translationDomain,
+                    $locale)
+            ) {
                 $i18nPattern = $route->getPattern();
             }
 
             // prefix with locale if requested
             if (self::STRATEGY_PREFIX === $this->strategy
-                    || (self::STRATEGY_PREFIX_EXCEPT_DEFAULT === $this->strategy && $this->defaultLocale !== $locale)) {
-                $i18nPattern = '/'.$locale.$i18nPattern;
+                || (self::STRATEGY_PREFIX_EXCEPT_DEFAULT === $this->strategy && $this->defaultLocale !== $locale)
+            ) {
+                $i18nPattern = '/' . $locale . $i18nPattern;
                 if (null !== $route->getOption('i18n_prefix')) {
-                    $i18nPattern = $route->getOption('i18n_prefix').$i18nPattern;
+                    $i18nPattern = $route->getOption('i18n_prefix') . $i18nPattern;
                 }
             }
 
             $patterns[$i18nPattern][] = $locale;
+
         }
 
         return $patterns;
@@ -68,11 +116,43 @@ class DefaultPatternGenerationStrategy implements PatternGenerationStrategyInter
     public function addResources(RouteCollection $i18nCollection)
     {
         foreach ($this->locales as $locale) {
-            if (file_exists($metadata = $this->cacheDir.'/translations/catalogue.'.$locale.'.php.meta')) {
+            if (file_exists($metadata = $this->cacheDir . '/translations/catalogue.' . $locale . '.php.meta')) {
                 foreach (unserialize(file_get_contents($metadata)) as $resource) {
                     $i18nCollection->addResource($resource);
                 }
             }
         }
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getLocaleMapping()
+    {
+        return $this->localeMapping;
+    }
+
+    /**
+     * @param mixed $localeMapping
+     */
+    public function setLocaleMapping($localeMapping)
+    {
+        $this->localeMapping = $localeMapping;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getDomainMap()
+    {
+        return $this->domainMap;
+    }
+
+    /**
+     * @param mixed $domainMap
+     */
+    public function setDomainMap($domainMap)
+    {
+        $this->domainMap = $domainMap;
     }
 }

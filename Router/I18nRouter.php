@@ -41,6 +41,9 @@ class I18nRouter extends Router
     private $defaultLocale;
     private $redirectToHost = true;
     private $localeResolver;
+    private $domainMap = array();
+    private $localeMapping = array();
+
 
     /**
      * Constructor.
@@ -95,6 +98,38 @@ class I18nRouter extends Router
     }
 
     /**
+     * @return array
+     */
+    public function getDomainMap()
+    {
+        return $this->domainMap;
+    }
+
+    /**
+     * @param array $domainMap
+     */
+    public function setDomainMap($domainMap)
+    {
+        $this->domainMap = $domainMap;
+    }
+
+    /**
+     * @return array
+     */
+    public function getLocaleMapping()
+    {
+        return $this->localeMapping;
+    }
+
+    /**
+     * @param array $localeMapping
+     */
+    public function setLocaleMapping($localeMapping)
+    {
+        $this->localeMapping = $localeMapping;
+    }
+
+    /**
      * Generates a URL from the given parameters.
      *
      * @param  string  $name       The name of the route
@@ -117,23 +152,36 @@ class I18nRouter extends Router
 
         // if the locale is changed, and we have a host map, then we need to
         // generate an absolute URL
-        if ($currentLocale && $currentLocale !== $locale && $this->hostMap) {
+        if ($currentLocale && $currentLocale !== $locale && ($this->hostMap || $this->domainMap)) {
             $absolute = true;
         }
 
         $generator = $this->getGenerator();
 
+        $currentDomain = $this->context->getHost();
+        if ($absolute && $this->domainMap) {
+            $this->context->setHost($currentDomain);
+        }
+
         // if an absolute URL is requested, we set the correct host
+        $currentHost = $this->context->getHost();
         if ($absolute && $this->hostMap) {
-            $currentHost = $this->context->getHost();
             $this->context->setHost($this->hostMap[$locale]);
         }
 
         try {
-            $url = $generator->generate($locale.I18nLoader::ROUTING_PREFIX.$name, $parameters, $absolute);
+            if ($this->domainMap) {
+                $url = $generator->generate($locale.I18nLoader::ROUTING_PREFIX.$currentDomain.'__'.$name, $parameters, $absolute);
+            } else {
+                $url = $generator->generate($locale.I18nLoader::ROUTING_PREFIX.$name, $parameters, $absolute);
+            }
 
             if ($absolute && $this->hostMap) {
                 $this->context->setHost($currentHost);
+            }
+
+            if ($absolute && $this->domainMap) {
+                $this->context->setHost($currentDomain);
             }
 
             return $url;
@@ -142,6 +190,9 @@ class I18nRouter extends Router
                 $this->context->setHost($currentHost);
             }
 
+            if ($absolute && $this->domainMap) {
+                $this->context->setHost($currentDomain);
+            }
             // fallback to default behavior
         }
 
@@ -196,58 +247,101 @@ class I18nRouter extends Router
             return false;
         }
 
-        if (isset($params['_locales'])) {
-            if (false !== $pos = strpos($params['_route'], I18nLoader::ROUTING_PREFIX)) {
-                $params['_route'] = substr($params['_route'], $pos + strlen(I18nLoader::ROUTING_PREFIX));
-            }
+        /**
+         * @var $request Request
+         */
+        $request = $this->container->get('request');
+        $host = $request->getHost();
 
-            if (!($currentLocale = $this->context->getParameter('_locale'))
-                    && $this->container->isScopeActive('request')) {
-                $currentLocale = $this->localeResolver->resolveLocale(
-                    $this->container->get('request'), $params['_locales']);
 
-                // If the locale resolver was not able to determine a locale, then all efforts to
-                // make an informed decision have failed. Just display something as a last resort.
-                if (!$currentLocale) {
-                    $currentLocale = reset($params['_locales']);
+        // Domains logic
+        if ($this->domainMap && array_key_exists($host, $this->domainMap)) {
+            if (isset($params['_locales'])) {
+                if (isset($params['_locale']) && 0 < $pos = strpos($params['_route'],
+                        I18nLoader::ROUTING_PREFIX . $host . '__')
+                ) {
+                    $params['_route'] = substr($params['_route'],
+                        $pos + strlen(I18nLoader::ROUTING_PREFIX . $host . '__'));
+                }
+                if (!($currentLocale = $this->context->getParameter('_locale'))
+                    && $this->container->isScopeActive('request')
+                ) {
+                    $currentLocale = $this->localeResolver->resolveLocale(
+                        $request, $params['_locales']);
+
+                    // If the locale resolver was not able to determine a locale, then all efforts to
+                    // make an informed decision have failed. Just display something as a last resort.
+                    if (!$currentLocale) {
+                        $currentLocale = reset($params['_locales']);
+                    }
+                }
+
+                unset($params['_locales']);
+                $params['_locale'] = $currentLocale;
+            } else {
+                if (false !== $pos = strpos($params['_route'], I18nLoader::ROUTING_PREFIX . $host . '__')) {
+                    $params['_route'] = substr($params['_route'],
+                        $pos + strlen(I18nLoader::ROUTING_PREFIX . $host . '__'));
                 }
             }
+        // If no domains are provided, default JMS functionality
+        } else {
+            if (isset($params['_locales'])) {
+                if (false !== $pos = strpos($params['_route'], I18nLoader::ROUTING_PREFIX)) {
+                    $params['_route'] = substr($params['_route'], $pos + strlen(I18nLoader::ROUTING_PREFIX));
+                }
 
-            if (!in_array($currentLocale, $params['_locales'], true)) {
-                // TODO: We might want to allow the user to be redirected to the route for the given locale if
-                //       it exists regardless of whether it would be on another domain, or the same domain.
-                //       Below we assume that we do not want to redirect always.
+                if (!($currentLocale = $this->context->getParameter('_locale'))
+                    && $this->container->isScopeActive('request')
+                ) {
+                    $currentLocale = $this->localeResolver->resolveLocale(
+                        $request, $params['_locales']);
 
-                // if the available locales are on a different host, throw a ResourceNotFoundException
-                if ($this->hostMap) {
-                    // generate host maps
-                    $hostMap = $this->hostMap;
-                    $availableHosts = array_map(function($locale) use ($hostMap) {
-                        return $hostMap[$locale];
-                    }, $params['_locales']);
+                    // If the locale resolver was not able to determine a locale, then all efforts to
+                    // make an informed decision have failed. Just display something as a last resort.
+                    if (!$currentLocale) {
+                        $currentLocale = reset($params['_locales']);
+                    }
+                }
 
-                    $differentHost = true;
-                    foreach ($availableHosts as $host) {
-                        if ($this->hostMap[$currentLocale] === $host) {
-                            $differentHost = false;
-                            break;
+                if (!in_array($currentLocale, $params['_locales'], true)) {
+                    // TODO: We might want to allow the user to be redirected to the route for the given locale if
+                    //       it exists regardless of whether it would be on another domain, or the same domain.
+                    //       Below we assume that we do not want to redirect always.
+
+                    // if the available locales are on a different host, throw a ResourceNotFoundException
+                    if ($this->hostMap) {
+                        // generate host maps
+                        $hostMap = $this->hostMap;
+                        $availableHosts = array_map(function ($locale) use ($hostMap) {
+                            return $hostMap[$locale];
+                        }, $params['_locales']);
+
+                        $differentHost = true;
+                        foreach ($availableHosts as $host) {
+                            if ($this->hostMap[$currentLocale] === $host) {
+                                $differentHost = false;
+                                break;
+                            }
+                        }
+
+                        if ($differentHost) {
+                            throw new ResourceNotFoundException(sprintf('The route "%s" is not available on the current host "%s", but only on these hosts "%s".',
+                                $params['_route'], $this->hostMap[$currentLocale], implode(', ', $availableHosts)));
                         }
                     }
 
-                    if ($differentHost) {
-                        throw new ResourceNotFoundException(sprintf('The route "%s" is not available on the current host "%s", but only on these hosts "%s".',
-                            $params['_route'], $this->hostMap[$currentLocale], implode(', ', $availableHosts)));
-                    }
+                    // no host map, or same host means that the given locale is not supported for this route
+                    throw new NotAcceptableLanguageException($currentLocale, $params['_locales']);
                 }
 
-                // no host map, or same host means that the given locale is not supported for this route
-                throw new NotAcceptableLanguageException($currentLocale, $params['_locales']);
+                unset($params['_locales']);
+                $params['_locale'] = $currentLocale;
+            } else {
+                if (isset($params['_locale']) && 0 < $pos = strpos($params['_route'], I18nLoader::ROUTING_PREFIX)) {
+                    $params['_route'] = substr($params['_route'], $pos + strlen(I18nLoader::ROUTING_PREFIX));
+                }
             }
-
-            unset($params['_locales']);
-            $params['_locale'] = $currentLocale;
-        } else if (isset($params['_locale']) && 0 < $pos = strpos($params['_route'], I18nLoader::ROUTING_PREFIX)) {
-            $params['_route'] = substr($params['_route'], $pos + strlen(I18nLoader::ROUTING_PREFIX));
         }
 
         // check if the matched route belongs to a different locale on another host
@@ -271,13 +365,18 @@ class I18nRouter extends Router
             );
         }
 
+        $locales = isset($this->domainMap[$host])
+            ?: isset($this->domainMap[$host])
+                ? $this->domainMap[$host]['locales']
+                : $this->container->getParameter('jms_i18n_routing.locales');
+
         // if we have no locale set on the route, we try to set one according to the localeResolver
         // if we don't do this all _internal routes will have the default locale on first request
         if (!isset($params['_locale'])
                 && $this->container->isScopeActive('request')
                 && $locale = $this->localeResolver->resolveLocale(
-                        $this->container->get('request'),
-                        $this->container->getParameter('jms_i18n_routing.locales'))) {
+                        $request,
+                        $locales)) {
             $params['_locale'] = $locale;
         }
 

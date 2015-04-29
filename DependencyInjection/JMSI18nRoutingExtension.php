@@ -20,8 +20,10 @@ namespace JMS\I18nRoutingBundle\DependencyInjection;
 
 use Symfony\Component\Config\Definition\Processor;
 use Symfony\Component\Config\FileLocator;
+use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Loader\XmlFileLoader;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\DependencyInjection\Extension;
 
 /**
@@ -36,9 +38,8 @@ class JMSI18nRoutingExtension extends Extension
         $processor = new Processor();
         $config = $processor->processConfiguration(new Configuration, $configs);
 
-        $loader = new XmlFileLoader($container, new FileLocator(array(__DIR__.'/../Resources/config')));
+        $loader = new XmlFileLoader($container, new FileLocator(array(__DIR__ . '/../Resources/config')));
         $loader->load('services.xml');
-
         $container->setParameter('jms_i18n_routing.default_locale', $config['default_locale']);
         $container->setParameter('jms_i18n_routing.locales', $config['locales']);
         $container->setParameter('jms_i18n_routing.catalogue', $config['catalogue']);
@@ -46,29 +47,69 @@ class JMSI18nRoutingExtension extends Extension
         $container->setParameter('jms_i18n_routing.redirect_to_host', $config['redirect_to_host']);
         $container->setParameter('jms_i18n_routing.cookie.name', $config['cookie']['name']);
 
+        if ($config['domains']) {
+            $container->setParameter('jms_i18n_routing.domains', $config['domains']);
+            $container
+                ->getDefinition('jms_i18n_routing.router')
+                ->addMethodCall('setDomainMap', array('%jms_i18n_routing.domains%'));
+            $container
+                ->getDefinition('jms_i18n_routing.locale_resolver.default')
+                ->addMethodCall('setDomainMap', array('%jms_i18n_routing.domains%'));
+
+            $container->getDefinition('jms_i18n_routing.loader')
+                ->addMethodCall('setDomainMap', array('%jms_i18n_routing.domains%'));
+
+            $container->getDefinition('jms_i18n_routing.pattern_generation_strategy.default')
+                ->addMethodCall('setDomainMap', array('%jms_i18n_routing.domains%'));
+
+            // set default locale by domain!
+            $host = $this->getHost();
+            if ($host && isset($config['domains'][$host]['default_locale'])) {
+                $container->setParameter('jms_i18n_routing.default_locale',
+                    $config['domains'][$host]['default_locale']);
+            }
+
+            if ($host && isset($config['domains'][$host]['locales'])) {
+                $container->setParameter('jms_i18n_routing.locales', $config['domains'][$host]['locales']);
+            }
+        }
+
+        if ($config['locale_mapping']) {
+            $container->setParameter('jms_i18n_routing.locale_mapping', $config['locale_mapping']);
+            $container
+                ->getDefinition('jms_i18n_routing.router')
+                ->addMethodCall('setLocaleMapping', array('%jms_i18n_routing.locale_mapping%'));
+            $container
+                ->getDefinition('jms_i18n_routing.locale_resolver.default')
+                ->addMethodCall('setLocaleMapping', array('%jms_i18n_routing.locale_mapping%'));
+
+            $container->getDefinition('jms_i18n_routing.pattern_generation_strategy.default')
+                ->addMethodCall('setLocaleMapping', array('%jms_i18n_routing.locale_mapping%'));
+        }
+
         $this->addClassesToCompile(array(
             $container->getDefinition('jms_i18n_routing.router')->getClass(),
         ));
 
-        if ('prefix' === $config['strategy']) {
+        if ('prefix' === $config['strategy']
+            || 'domains_prefix_except_default' === $config['strategy']
+            || 'domains_prefix_except_default' === $config['strategy']
+        ) {
             $container
                 ->getDefinition('jms_i18n_routing.locale_choosing_listener')
                 ->setPublic(true)
-                ->addTag('kernel.event_listener', array('event' => 'kernel.exception', 'priority' => 128))
-            ;
+                ->addTag('kernel.event_listener', array('event' => 'kernel.exception', 'priority' => 128));
         }
 
         if ($config['hosts']) {
             $container->setParameter('jms_i18n_routing.hostmap', $config['hosts']);
             $container
                 ->getDefinition('jms_i18n_routing.router')
-                ->addMethodCall('setHostMap', array('%jms_i18n_routing.hostmap%'))
-            ;
+                ->addMethodCall('setHostMap', array('%jms_i18n_routing.hostmap%'));
 
             $container
                 ->getDefinition('jms_i18n_routing.locale_resolver.default')
-                ->addArgument(array_flip($config['hosts']))
-            ;
+                ->addArgument(array_flip($config['hosts']));
         } elseif ($config['cookie']['enabled']) {
             $container
                 ->getDefinition('jms_i18n_routing.cookie_setting_listener')
@@ -79,8 +120,7 @@ class JMSI18nRoutingExtension extends Extension
                 ->addArgument($config['cookie']['secure'])
                 ->addArgument($config['cookie']['httponly'])
                 ->setPublic(true)
-                ->addTag('kernel.event_listener', array('event' => 'kernel.response', 'priority' => 256))
-            ;
+                ->addTag('kernel.event_listener', array('event' => 'kernel.response', 'priority' => 256));
         }
 
         // remove route extractor if JMSTranslationBundle is not enabled to avoid any problems
@@ -90,8 +130,23 @@ class JMSI18nRoutingExtension extends Extension
         }
     }
 
+    /**
+     * @return string
+     */
     public function getAlias()
     {
         return 'jms_i18n_routing';
+    }
+
+    /**
+     * @return string|bool
+     */
+    protected function getHost()
+    {
+        return isset($_SERVER['HTTP_HOST'])
+            ? $_SERVER['HTTP_HOST']
+            : isset($_SERVER['SERVER_NAME'])
+                ? $_SERVER['SERVER_NAME']
+                : false;
     }
 }

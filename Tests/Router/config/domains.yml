@@ -1,0 +1,24 @@
+jms_i18n_routing:
+    default_locale: en
+    locales: [en_GL, de_GL, es_GL]
+    domains:
+        en.host:
+            default_locale: en_GL
+            locales:
+              - en_GL
+              - de_GL
+        de.host:
+            default_locale: de_GL
+            locales:
+              - de_GL
+        es.host:
+            default_locale: es_GL
+            locales:
+              - es_GL
+              - en_GL
+              - de_GL
+
+    locale_mapping:
+        en_GL: en
+        de_GL: de
+        es_GL: es

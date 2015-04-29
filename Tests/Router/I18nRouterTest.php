@@ -20,6 +20,7 @@ namespace JMS\I18nRoutingBundle\Tests\Router;
 
 use JMS\I18nRoutingBundle\Router\DefaultPatternGenerationStrategy;
 use JMS\I18nRoutingBundle\Router\DefaultRouteExclusionStrategy;
+use Symfony\Component\Finder\Finder;
 use Symfony\Component\Translation\IdentityTranslator;
 use Symfony\Component\Translation\Loader\YamlFileLoader as TranslationLoader;
 use Symfony\Component\Translation\MessageSelector;
@@ -34,6 +35,8 @@ use Symfony\Component\Routing\Exception\RouteNotFoundException;
 use Symfony\Component\Routing\Exception\ResourceNotFoundException;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\DependencyInjection\Scope;
+use Symfony\Component\Validator\Mapping\Loader\YamlFilesLoader;
+use Symfony\Component\Yaml\Yaml;
 
 class I18nRouterTest extends \PHPUnit_Framework_TestCase
 {
@@ -289,18 +292,21 @@ class I18nRouterTest extends \PHPUnit_Framework_TestCase
 
     private function getRouter($config = 'routing.yml', $translator = null, $localeResolver = null)
     {
+        $locales = array('en', 'de', 'fr');
         $container = new Container();
         $container->set('routing.loader', new YamlFileLoader(new FileLocator(__DIR__.'/Fixture')));
+        $container->set('request', $this->getRequest());
+        $container->setParameter('jms_i18n_routing.locales', $locales);
 
         if (null === $translator) {
             $translator = new Translator('en', new MessageSelector());
             $translator->setFallbackLocale('en');
             $translator->addLoader('yml', new TranslationLoader());
-            $translator->addResource('yml', file_get_contents(__DIR__.'/Fixture/routes.de.yml'), 'de', 'routes');
-            $translator->addResource('yml', file_get_contents(__DIR__.'/Fixture/routes.en.yml'), 'en', 'routes');
+            $translator->addResource('yml', __DIR__.'/Fixture/routes.de.yml', 'de', 'routes');
+            $translator->addResource('yml', __DIR__.'/Fixture/routes.en.yml', 'en', 'routes');
         }
 
-        $container->set('i18n_loader', new I18nLoader(new DefaultRouteExclusionStrategy(), new DefaultPatternGenerationStrategy('custom', $translator, array('en', 'de', 'fr'), sys_get_temp_dir())));
+        $container->set('i18n_loader', new I18nLoader(new DefaultRouteExclusionStrategy(), new DefaultPatternGenerationStrategy('custom', $translator, $locales, sys_get_temp_dir())));
 
         $router = new I18nRouter($container, $config);
         $router->setI18nLoaderId('i18n_loader');
@@ -316,19 +322,22 @@ class I18nRouterTest extends \PHPUnit_Framework_TestCase
     /**
      * Gets the translator required for checking the DoubleLocale tests (en_UK etc)
      */
-    private function getNonRedirectingHostMapRouter($config = 'routing.yml') {
+    private function getNonRedirectingHostMapRouter($config = 'routing.yml', $strategy = 'custom') {
+        $locales = array('en_UK', 'en_US', 'nl_NL', 'nl_BE');
         $container = new Container();
         $container->set('routing.loader', new YamlFileLoader(new FileLocator(__DIR__.'/Fixture')));
+        $container->set('request', $this->getRequest());
+        $container->setParameter('jms_i18n_routing.locales', $locales);
 
         $translator = new Translator('en_UK', new MessageSelector());
         $translator->setFallbackLocale('en');
         $translator->addLoader('yml', new TranslationLoader());
-        $translator->addResource('yml', file_get_contents(__DIR__.'/Fixture/routes.en_UK.yml'), 'en_UK', 'routes');
-        $translator->addResource('yml', file_get_contents(__DIR__.'/Fixture/routes.en_US.yml'), 'en_US', 'routes');
-        $translator->addResource('yml', file_get_contents(__DIR__.'/Fixture/routes.nl.yml'), 'nl', 'routes');
-        $translator->addResource('yml', file_get_contents(__DIR__.'/Fixture/routes.en.yml'), 'en', 'routes');
+        $translator->addResource('yml', __DIR__.'/Fixture/routes.en_UK.yml', 'en_UK', 'routes');
+        $translator->addResource('yml', __DIR__.'/Fixture/routes.en_US.yml', 'en_US', 'routes');
+        $translator->addResource('yml', __DIR__.'/Fixture/routes.nl.yml', 'nl', 'routes');
+        $translator->addResource('yml', __DIR__.'/Fixture/routes.en.yml', 'en', 'routes');
 
-        $container->set('i18n_loader', new I18nLoader(new DefaultRouteExclusionStrategy(), new DefaultPatternGenerationStrategy('custom', $translator, array('en_UK', 'en_US', 'nl_NL', 'nl_BE'), sys_get_temp_dir(), 'routes', 'en_UK')));
+        $container->set('i18n_loader', new I18nLoader(new DefaultRouteExclusionStrategy(), new DefaultPatternGenerationStrategy($strategy, $translator, $locales, sys_get_temp_dir(), 'routes', 'en_UK')));
 
         $router = new I18nRouter($container, $config);
         $router->setRedirectToHost(false);
@@ -343,4 +352,140 @@ class I18nRouterTest extends \PHPUnit_Framework_TestCase
 
         return $router;
     }
+
+    /**
+     * Gets the translator required for checking the DoubleLocale tests (en_UK etc)
+     */
+    private function getNonRedirectingDomainRouter($config = 'routing.yml', $strategy = 'domains_prefix_except_default', $host = '') {
+
+        $domainsConfig = Yaml::parse(file_get_contents(__DIR__ . '/config/domains.yml'));
+
+        $locales = $domainsConfig['jms_i18n_routing']['locales'];
+        $container = new Container();
+
+        $container->set('routing.loader', new YamlFileLoader(new FileLocator([__DIR__.'/Fixture'])));
+        $container->set('request', $this->getRequest($host));
+        $container->setParameter('jms_i18n_routing.locales', $locales);
+        $container->setParameter('jms_i18n_routing.domains', $domainsConfig['jms_i18n_routing']['domains']);
+        $container->setParameter('jms_i18n_routing.locale_mapping', $domainsConfig['jms_i18n_routing']['locale_mapping']);
+
+        $translator = new Translator('en_GL', new MessageSelector());
+        $translator->setFallbackLocale('en_GL');
+        $translator->addLoader('yml', new TranslationLoader());
+        $translator->addResource('yml', __DIR__.'/Fixture/routes.domains.yml', 'en', 'routes');
+
+        $defaultStrategyGenerator = new DefaultPatternGenerationStrategy($strategy, $translator, $locales, sys_get_temp_dir(), 'routes', 'en_GL');
+        $defaultStrategyGenerator->setDomainMap($container->getParameter('jms_i18n_routing.domains'));
+        $defaultStrategyGenerator->setLocaleMapping($container->getParameter('jms_i18n_routing.locale_mapping'));
+        $routeLoader = new I18nLoader(new DefaultRouteExclusionStrategy(), $defaultStrategyGenerator);
+        $routeLoader->setDomainMap($container->getParameter('jms_i18n_routing.domains'));
+
+        $container->set('i18n_loader', $routeLoader);
+
+        $router = new I18nRouter($container, $config);
+
+        $router->setDomainMap($container->getParameter('jms_i18n_routing.domains'));
+        $router->setLocaleMapping($container->getParameter('jms_i18n_routing.locale_mapping'));
+        $router->setI18nLoaderId('i18n_loader');
+
+        return $router;
+    }
+
+    public function testENDomains()
+    {
+        $router = $this->getNonRedirectingDomainRouter('routes.domains.yml', 'domains_prefix_except_default', $host = 'en.host');
+        $router->getContext()->setHost('en.host');
+        $router->match('/search');
+        $router->match('/de/search');
+    }
+
+    public function testDEDomains()
+    {
+        $router = $this->getNonRedirectingDomainRouter('routes.domains.yml', 'domains_prefix_except_default', $host = 'de.host');
+        $router->getContext()->setHost('de.host');
+        $router->match('/search');
+    }
+
+    public function testESDomains()
+    {
+        $router = $this->getNonRedirectingDomainRouter('routes.domains.yml', 'domains_prefix_except_default', $host = 'es.host');
+        $router->getContext()->setHost('es.host');
+        $router->match('/search');
+        $router->match('/de/search');
+        $router->match('/en/search');
+    }
+
+    /**
+     * @expectedException Symfony\Component\Routing\Exception\ResourceNotFoundException
+     */
+    public function testENDomainsDoesNotHaveLocale()
+    {
+        $router = $this->getNonRedirectingDomainRouter('routes.domains.yml', 'domains_prefix_except_default', $host = 'en.host');
+        $router->getContext()->setHost('en.host');
+        $router->match('/search');
+        $router->match('/es/search');
+    }
+
+    /**
+     * @expectedException Symfony\Component\Routing\Exception\ResourceNotFoundException
+     */
+    public function testDEDomainsDoesNotHaveLocale()
+    {
+        $router = $this->getNonRedirectingDomainRouter('routes.domains.yml', 'domains_prefix_except_default', $host = 'de.host');
+        $router->getContext()->setHost('de.host');
+        $router->match('/search');
+        $router->match('/en/search');
+    }
+
+    /**
+     * @expectedException Symfony\Component\Routing\Exception\ResourceNotFoundException
+     */
+    public function testESDomainsDoesNotHaveLocale()
+    {
+        $router = $this->getNonRedirectingDomainRouter('routes.domains.yml', 'domains_prefix_except_default', $host = 'es.host');
+        $router->getContext()->setHost('es.host');
+        $router->match('/search');
+        $router->match('/gb/search');
+    }
+
+    /**
+     * @expectedException Symfony\Component\Routing\Exception\ResourceNotFoundException
+     */
+    public function testENDomainsDoesNotHaveOwnLocale()
+    {
+        $router = $this->getNonRedirectingDomainRouter('routes.domains.yml', 'domains_prefix_except_default', $host = 'en.host');
+        $router->getContext()->setHost('en.host');
+        $router->match('/en/search');
+    }
+
+    /**
+     * @expectedException Symfony\Component\Routing\Exception\ResourceNotFoundException
+     */
+    public function testDEDomainsDoesNotHaveOwnLocale()
+    {
+        $router = $this->getNonRedirectingDomainRouter('routes.domains.yml', 'domains_prefix_except_default', $host = 'de.host');
+        $router->getContext()->setHost('de.host');
+        $router->match('/de/search');
+    }
+
+    /**
+     * @expectedException Symfony\Component\Routing\Exception\ResourceNotFoundException
+     */
+    public function testESDomainsDoesNotHaveOwnLocale()
+    {
+        $router = $this->getNonRedirectingDomainRouter('routes.domains.yml', 'domains_prefix_except_default', $host = 'es.host');
+        $router->getContext()->setHost('es.host');
+        $router->match('/es/search');
+    }
+
+    /**
+     * @return Request
+     */
+    private function getRequest($host = 'localhost')
+    {
+        $request = new RequestContext();
+        $request->setHost($host);
+        return $request;
+    }
+
 }

@@ -11,10 +11,11 @@
          syntaxCheck="false"
          bootstrap="./Tests/bootstrap.php"
 >
-         
+
     <testsuites>
         <testsuite name="I18nRoutingBundle Test Suite">
             <directory>./Tests</directory>
+            <exclude>./Tests/Functional</exclude>
         </testsuite>
     </testsuites>
     

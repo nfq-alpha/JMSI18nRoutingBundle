@@ -28,6 +28,7 @@ class PrefixStrategyTest extends BaseTestCase
         $client = $this->createClient(array('config' => 'strategy_prefix.yml'), array(
             'HTTP_ACCEPT_LANGUAGE' => $acceptLanguages,
         ));
+
         $client->insulate();
 
         $client->request('GET', '/?extra=params');
@@ -53,7 +54,7 @@ class PrefixStrategyTest extends BaseTestCase
         $response = $client->getResponse();
         $this->assertTrue($response->isRedirect('/de/'), (string) $response);
 
-        $cookies = $response->headers->getCookies();
+        $cookies = $response->getHeaders()->getCookies();
         $this->assertSame(2, count($cookies));
         $this->assertSame('de', $cookies[0]->getValue());
     }
@@ -68,7 +69,7 @@ class PrefixStrategyTest extends BaseTestCase
         $response = $client->getResponse();
         $this->assertTrue($response->isClientError(), (string) $response);
 
-        $cookies = $response->headers->getCookies();
+        $cookies = $response->getHeaders()->getCookies();
         $this->assertSame(1, count($cookies));
     }
 }

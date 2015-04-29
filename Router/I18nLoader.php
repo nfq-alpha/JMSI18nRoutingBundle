@@ -35,6 +35,7 @@ class I18nLoader
 
     private $routeExclusionStrategy;
     private $patternGenerationStrategy;
+    private $domainMap = array();
 
     public function __construct(RouteExclusionStrategyInterface $routeExclusionStrategy, PatternGenerationStrategyInterface $patternGenerationStrategy)
     {
@@ -56,25 +57,58 @@ class I18nLoader
                 continue;
             }
 
-            foreach ($this->patternGenerationStrategy->generateI18nPatterns($name, $route) as $pattern => $locales) {
-                // If this pattern is used for more than one locale, we need to keep the original route.
-                // We still add individual routes for each locale afterwards for faster generation.
-                if (count($locales) > 1) {
-                    $catchMultipleRoute = clone $route;
-                    $catchMultipleRoute->setPattern($pattern);
-                    $catchMultipleRoute->setDefault('_locales', $locales);
-                    $i18nCollection->add(implode('_', $locales).I18nLoader::ROUTING_PREFIX.$name, $catchMultipleRoute);
-                }
+            if ($this->domainMap) {
+                foreach ($this->patternGenerationStrategy->generateI18nPatterns($name, $route) as $domain => $patterns) {
+                    foreach ($patterns as $pattern => $locales) {
+                        if (count($locales) > 1) {
+                            $catchMultipleRoute = clone $route;
+                            $catchMultipleRoute->setPattern($pattern);
+                            $catchMultipleRoute->setDefault('_locales', $locales);
+                            $catchMultipleRoute->setHost($domain);
+                            $i18nCollection->add(implode('_', $locales) . I18nLoader::ROUTING_PREFIX . $domain . '__' . $name,
+                                $catchMultipleRoute);
+                        }
 
-                foreach ($locales as $locale) {
-                    $localeRoute = clone $route;
-                    $localeRoute->setPattern($pattern);
-                    $localeRoute->setDefault('_locale', $locale);
-                    $i18nCollection->add($locale.I18nLoader::ROUTING_PREFIX.$name, $localeRoute);
+                        foreach ($locales as $locale) {
+                            $localeRoute = clone $route;
+                            $localeRoute->setPattern($pattern);
+                            $localeRoute->setDefault('_locale', $locale);
+                            $localeRoute->setHost($domain);
+                            $i18nCollection->add($locale . I18nLoader::ROUTING_PREFIX . $domain . '__' . $name, $localeRoute);
+                        }
+                    }
+                }
+            } else {
+                foreach ($this->patternGenerationStrategy->generateI18nPatterns($name,
+                    $route) as $pattern => $locales) {
+                    // If this pattern is used for more than one locale, we need to keep the original route.
+                    // We still add individual routes for each locale afterwards for faster generation.
+                    if (count($locales) > 1) {
+                        $catchMultipleRoute = clone $route;
+                        $catchMultipleRoute->setPattern($pattern);
+                        $catchMultipleRoute->setDefault('_locales', $locales);
+                        $i18nCollection->add(implode('_', $locales) . I18nLoader::ROUTING_PREFIX . $name,
+                            $catchMultipleRoute);
+                    }
+
+                    foreach ($locales as $locale) {
+                        $localeRoute = clone $route;
+                        $localeRoute->setPattern($pattern);
+                        $localeRoute->setDefault('_locale', $locale);
+                        $i18nCollection->add($locale . I18nLoader::ROUTING_PREFIX . $name, $localeRoute);
+                    }
                 }
             }
         }
 
         return $i18nCollection;
+    }
+
+    /**
+     * @param $domainMap
+     */
+    public function setDomainMap($domainMap)
+    {
+        $this->domainMap = $domainMap;
     }
 }
