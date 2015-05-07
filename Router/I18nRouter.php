@@ -193,6 +193,21 @@ class I18nRouter extends Router
             if ($absolute && $this->domainMap) {
                 $this->context->setHost($currentDomain);
             }
+
+            // Try to resolve the url of other domains
+            if ($this->domainMap) {
+                foreach ($this->domainMap as $domainName => $domainData) {
+                    try {
+                        if (in_array($locale, $domainData['locales'])) {
+                            return $generator->generate($locale . I18nLoader::ROUTING_PREFIX . $domainName . '__' . $name,
+                                $parameters, $absolute);
+                        }
+                    } catch (RouteNotFoundException $ex) {
+                        continue;
+                    }
+                }
+            }
+
             // fallback to default behavior
         }
 
