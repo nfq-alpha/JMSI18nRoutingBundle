@@ -125,6 +125,7 @@ final class Configuration implements ConfigurationInterface
                                     ->requiresAtLeastOneElement()
                                     ->prototype('scalar')->end()
                                 ->end()
+                                ->scalarNode('ga_code')->end()
                             ->end()
                         ->end()
                     ->end()
