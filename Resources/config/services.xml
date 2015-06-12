@@ -37,6 +37,9 @@
             <call method="setRedirectToHost">
                 <argument>%jms_i18n_routing.redirect_to_host%</argument>
             </call>
+            <call method="setRedirectToDomain">
+                <argument>%jms_i18n_routing.redirect_to_domain%</argument>
+            </call>
         </service>
         
         <service id="jms_i18n_routing.locale_choosing_listener" class="%jms_i18n_routing.locale_choosing_listener.class%" public="false">

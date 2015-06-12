@@ -114,6 +114,7 @@ final class Configuration implements ConfigurationInterface
                             ->booleanNode('httponly')->defaultFalse()->end()
                         ->end()
                     ->end()
+                    ->booleanNode('redirect_to_domain')->defaultFalse()->end()
                     ->arrayNode('domains')
                         ->requiresAtLeastOneElement()
                         ->useAttributeAsKey('name')

@@ -72,6 +72,8 @@ class JMSI18nRoutingExtension extends Extension
             if ($host && isset($config['domains'][$host]['locales'])) {
                 $container->setParameter('jms_i18n_routing.locales', $config['domains'][$host]['locales']);
             }
+
+            $container->setParameter('jms_i18n_routing.redirect_to_domain', $config['redirect_to_domain']);
         }
 
         if ($config['locale_mapping']) {

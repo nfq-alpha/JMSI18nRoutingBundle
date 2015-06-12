@@ -40,6 +40,7 @@ class I18nRouter extends Router
     private $container;
     private $defaultLocale;
     private $redirectToHost = true;
+    private $redirectToDomain = false;
     private $localeResolver;
     private $domainMap = array();
     private $localeMapping = array();
@@ -74,7 +75,7 @@ class I18nRouter extends Router
      */
     public function setRedirectToHost($bool)
     {
-        $this->redirectToHost = (Boolean) $bool;
+        $this->redirectToHost = (Boolean)$bool;
     }
 
     /**
@@ -130,11 +131,27 @@ class I18nRouter extends Router
     }
 
     /**
+     * @return boolean
+     */
+    public function isRedirectToDomain()
+    {
+        return $this->redirectToDomain;
+    }
+
+    /**
+     * @param boolean $redirectToDomain
+     */
+    public function setRedirectToDomain($redirectToDomain)
+    {
+        $this->redirectToDomain = $redirectToDomain;
+    }
+
+    /**
      * Generates a URL from the given parameters.
      *
-     * @param  string  $name       The name of the route
-     * @param  array   $parameters An array of parameters
-     * @param  Boolean $absolute   Whether to generate an absolute URL
+     * @param  string $name The name of the route
+     * @param  array $parameters An array of parameters
+     * @param  Boolean $absolute Whether to generate an absolute URL
      *
      * @return string The generated URL
      */
@@ -144,10 +161,12 @@ class I18nRouter extends Router
         $currentLocale = $this->context->getParameter('_locale');
         if (isset($parameters['_locale'])) {
             $locale = $parameters['_locale'];
-        } else if ($currentLocale) {
-            $locale = $currentLocale;
         } else {
-            $locale = $this->defaultLocale;
+            if ($currentLocale) {
+                $locale = $currentLocale;
+            } else {
+                $locale = $this->defaultLocale;
+            }
         }
 
         // if the locale is changed, and we have a host map, then we need to
@@ -171,9 +190,10 @@ class I18nRouter extends Router
 
         try {
             if ($this->domainMap) {
-                $url = $generator->generate($locale.I18nLoader::ROUTING_PREFIX.$currentDomain.'__'.$name, $parameters, $absolute);
+                $url = $generator->generate($locale . I18nLoader::ROUTING_PREFIX . $currentDomain . '__' . $name,
+                    $parameters, $absolute);
             } else {
-                $url = $generator->generate($locale.I18nLoader::ROUTING_PREFIX.$name, $parameters, $absolute);
+                $url = $generator->generate($locale . I18nLoader::ROUTING_PREFIX . $name, $parameters, $absolute);
             }
 
             if ($absolute && $this->hostMap) {
@@ -299,7 +319,25 @@ class I18nRouter extends Router
                         $pos + strlen(I18nLoader::ROUTING_PREFIX . $host . '__'));
                 }
             }
-        // If no domains are provided, default JMS functionality
+
+            // Handle the domain redirects
+            if ($this->redirectToDomain) {
+                $localeDomain = $this->resolveHostByLocale($params['_locale'], $host);
+                if ($localeDomain !== $host) {
+                    return [
+                        '_controller' => 'JMS\I18nRoutingBundle\Controller\RedirectController::redirectAction',
+                        'path'        => '/',
+                        'host'        => $localeDomain,
+                        'permanent'   => true,
+                        'scheme'      => $this->context->getScheme(),
+                        'httpPort'    => $this->context->getHttpPort(),
+                        'httpsPort'   => $this->context->getHttpsPort(),
+                        '_route'      => $params['_route'],
+                    ];
+                }
+            }
+
+            // If no domains are provided, default JMS functionality
         } else {
             if (isset($params['_locales'])) {
                 if (false !== $pos = strpos($params['_route'], I18nLoader::ROUTING_PREFIX)) {
@@ -361,22 +399,24 @@ class I18nRouter extends Router
 
         // check if the matched route belongs to a different locale on another host
         if (isset($params['_locale'])
-                && isset($this->hostMap[$params['_locale']])
-                && $this->context->getHost() !== $host = $this->hostMap[$params['_locale']]) {
+            && isset($this->hostMap[$params['_locale']])
+            && $this->context->getHost() !== $host = $this->hostMap[$params['_locale']]
+        ) {
             if (!$this->redirectToHost) {
                 throw new ResourceNotFoundException(sprintf(
-                    'Resource corresponding to pattern "%s" not found for locale "%s".', $url, $this->getContext()->getParameter('_locale')));
+                    'Resource corresponding to pattern "%s" not found for locale "%s".', $url,
+                    $this->getContext()->getParameter('_locale')));
             }
 
             return array(
                 '_controller' => 'JMS\I18nRoutingBundle\Controller\RedirectController::redirectAction',
-                'path'        => $url,
-                'host'        => $host,
-                'permanent'   => true,
-                'scheme'      => $this->context->getScheme(),
-                'httpPort'    => $this->context->getHttpPort(),
-                'httpsPort'   => $this->context->getHttpsPort(),
-                '_route'      => $params['_route'],
+                'path' => $url,
+                'host' => $host,
+                'permanent' => true,
+                'scheme' => $this->context->getScheme(),
+                'httpPort' => $this->context->getHttpPort(),
+                'httpsPort' => $this->context->getHttpsPort(),
+                '_route' => $params['_route'],
             );
         }
 
@@ -388,13 +428,33 @@ class I18nRouter extends Router
         // if we have no locale set on the route, we try to set one according to the localeResolver
         // if we don't do this all _internal routes will have the default locale on first request
         if (!isset($params['_locale'])
-                && $this->container->isScopeActive('request')
-                && $locale = $this->localeResolver->resolveLocale(
-                        $request,
-                        $locales)) {
+            && $this->container->isScopeActive('request')
+            && $locale = $this->localeResolver->resolveLocale(
+                $request,
+                $locales)
+        ) {
             $params['_locale'] = $locale;
         }
 
         return $params;
+    }
+
+    /**
+     * @param $locale
+     * @param $host
+     * @return int|string
+     */
+    protected function resolveHostByLocale($locale, $host)
+    {
+        $localeDomain = $host;
+        foreach ($this->domainMap as $domain => $data) {
+            if (isset($data['default_locale']) && !empty($data['default_locale'])) {
+                if ($data['default_locale'] === $locale) {
+                    $localeDomain = $domain;
+                }
+            }
+        }
+
+        return $localeDomain;
     }
 }
