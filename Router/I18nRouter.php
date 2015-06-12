@@ -321,7 +321,7 @@ class I18nRouter extends Router
             }
 
             // Handle the domain redirects
-            if ($this->redirectToDomain) {
+            if ($this->redirectToDomain && isset($params['_locale'])) {
                 $localeDomain = $this->resolveHostByLocale($params['_locale'], $host);
                 if ($localeDomain !== $host) {
                     return [
