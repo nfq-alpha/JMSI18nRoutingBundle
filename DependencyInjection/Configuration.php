@@ -127,7 +127,7 @@ final class Configuration implements ConfigurationInterface
                                     ->prototype('scalar')->end()
                                 ->end()
                                 ->scalarNode('ga_code')->defaultNull('')->end()
-                                ->booleanNode('default_currency')->defaultValue('EUR')->end()
+                                ->scalarNode('default_currency')->defaultValue('EUR')->end()
                             ->end()
                         ->end()
                     ->end()
