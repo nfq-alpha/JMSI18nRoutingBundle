@@ -128,6 +128,7 @@ final class Configuration implements ConfigurationInterface
                                 ->end()
                                 ->scalarNode('ga_code')->defaultNull('')->end()
                                 ->scalarNode('default_currency')->defaultValue('EUR')->end()
+                                ->arrayNode('tracking')->end()
                             ->end()
                         ->end()
                     ->end()
